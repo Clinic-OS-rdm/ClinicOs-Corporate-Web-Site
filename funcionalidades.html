@@ -334,6 +334,7 @@ body.splash-body{ margin:0; }
 .splash-blob--b{ width:380px; height:380px; background:var(--sage); bottom:-150px; right:-110px; animation:driftB 17s ease-in-out infinite; }
 @keyframes driftA{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(36px,26px); } }
 @keyframes driftB{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(-28px,-34px); } }
+.splash-waves{ position:absolute; inset:0; width:100%; height:100%; z-index:1; pointer-events:none; }
 
 .splash-content{ position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; text-align:center; padding:24px; }
 .splash-logo-wrap{ position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center; }
@@ -622,6 +623,8 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 
+  initSplashWaves();
+
   if ('IntersectionObserver' in window && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     var revealObserver = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
@@ -640,6 +643,77 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 });
+
+function initSplashWaves() {
+  var canvas = document.getElementById('wave-canvas');
+  if (!canvas || !canvas.getContext) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { canvas.remove(); return; }
+
+  var ctx = canvas.getContext('2d');
+  var host = canvas.parentElement;
+  var w = 0, h = 0, dpr = 1;
+  var mouseX = null, mouseY = null;
+  var targetX = null, targetY = null;
+  var t = 0;
+  var lineCount = 10;
+
+  function resize() {
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = canvas.offsetWidth;
+    h = canvas.offsetHeight;
+    canvas.width = Math.max(1, w * dpr);
+    canvas.height = Math.max(1, h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function setPointer(clientX, clientY) {
+    var rect = canvas.getBoundingClientRect();
+    targetX = clientX - rect.left;
+    targetY = clientY - rect.top;
+  }
+  host.addEventListener('mousemove', function (e) { setPointer(e.clientX, e.clientY); });
+  host.addEventListener('mouseleave', function () { targetX = null; targetY = null; });
+  host.addEventListener('touchmove', function (e) {
+    if (e.touches && e.touches[0]) { setPointer(e.touches[0].clientX, e.touches[0].clientY); }
+  }, { passive: true });
+  host.addEventListener('touchend', function () { targetX = null; targetY = null; });
+
+  function draw() {
+    t += 0.012;
+    if (targetX === null) {
+      mouseX = null; mouseY = null;
+    } else if (mouseX === null) {
+      mouseX = targetX; mouseY = targetY;
+    } else {
+      mouseX += (targetX - mouseX) * 0.09;
+      mouseY += (targetY - mouseY) * 0.09;
+    }
+
+    ctx.clearRect(0, 0, w, h);
+    var step = 8;
+    for (var i = 0; i < lineCount; i++) {
+      var baseY = (h / (lineCount + 1)) * (i + 1);
+      ctx.beginPath();
+      for (var x = 0; x <= w; x += step) {
+        var y = baseY + Math.sin(x * 0.012 + t + i * 0.45) * 3.5;
+        if (mouseX !== null) {
+          var dx = x - mouseX, dy = baseY - mouseY;
+          var dist = Math.sqrt(dx * dx + dy * dy);
+          var influence = Math.max(0, 1 - dist / 280);
+          y += Math.sin(dist * 0.045 - t * 3.2) * influence * 30;
+        }
+        if (x === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
+      }
+      ctx.strokeStyle = 'rgba(194,99,47,' + (i % 2 === 0 ? 0.07 : 0.05) + ')';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    requestAnimationFrame(draw);
+  }
+  requestAnimationFrame(draw);
+}
 
 </script>
 </body>
