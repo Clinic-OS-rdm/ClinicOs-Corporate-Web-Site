@@ -328,16 +328,36 @@ body.splash-body{ margin:0; }
   min-height:100vh; display:flex; align-items:center; justify-content:center;
   position:relative; overflow:hidden; text-decoration:none; color:inherit;
   -webkit-tap-highlight-color:transparent;
+  background:
+    radial-gradient(circle at 10% 12%, rgba(194,99,47,.32), transparent 30%),
+    radial-gradient(circle at 92% 8%, rgba(143,70,32,.22), transparent 26%),
+    radial-gradient(circle at 88% 92%, rgba(111,140,106,.30), transparent 32%),
+    radial-gradient(circle at 6% 92%, rgba(111,140,106,.20), transparent 28%),
+    linear-gradient(135deg, #FBF4EA 0%, #F6EFE6 45%, #F2EBDC 100%);
+  background-size: 220% 220%, 220% 220%, 220% 220%, 220% 220%, 200% 200%;
+  animation: splashBgShift 26s ease-in-out infinite;
 }
-.splash-blob{ position:absolute; border-radius:50%; filter:blur(70px); opacity:.22; pointer-events:none; }
+@keyframes splashBgShift{
+  0%,100%{ background-position: 0% 0%, 100% 0%, 100% 100%, 0% 100%, 0% 50%; }
+  50%{ background-position: 12% 8%, 88% 10%, 90% 90%, 8% 90%, 100% 50%; }
+}
+.splash-blob{ position:absolute; border-radius:50%; filter:blur(70px); opacity:.16; pointer-events:none; }
 .splash-blob--a{ width:440px; height:440px; background:var(--terracota); top:-140px; left:-120px; animation:driftA 15s ease-in-out infinite; }
 .splash-blob--b{ width:380px; height:380px; background:var(--sage); bottom:-150px; right:-110px; animation:driftB 17s ease-in-out infinite; }
 @keyframes driftA{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(36px,26px); } }
 @keyframes driftB{ 0%,100%{ transform:translate(0,0); } 50%{ transform:translate(-28px,-34px); } }
 .splash-waves{ position:absolute; inset:0; width:100%; height:100%; z-index:1; pointer-events:none; }
+.splash-spotlight{
+  position:absolute; inset:0; z-index:1; pointer-events:none;
+  background: radial-gradient(circle 360px at var(--mx,50%) var(--my,50%), rgba(255,250,240,.65), rgba(255,250,240,0) 68%);
+  opacity: var(--spot-o, 0);
+}
 
 .splash-content{ position:relative; z-index:2; display:flex; flex-direction:column; align-items:center; text-align:center; padding:24px; }
-.splash-logo-wrap{ position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center; }
+.splash-logo-wrap{
+  position:relative; width:168px; height:168px; display:flex; align-items:center; justify-content:center;
+  transform-style:preserve-3d; will-change:transform;
+}
 .splash-ring{
   position:absolute; inset:0; border-radius:50%; border:1px solid rgba(194,99,47,.4);
   opacity:0; animation:splashPulse 2.8s ease-out .9s infinite;
@@ -351,8 +371,6 @@ body.splash-body{ margin:0; }
 }
 @keyframes splashLogoIn{ from{ opacity:0; transform:scale(.8) translateY(8px); } to{ opacity:1; transform:scale(1) translateY(0); } }
 @keyframes splashBreathe{ 0%,100%{ transform:scale(1); } 50%{ transform:scale(1.035); } }
-.splash-logo-wrap{ transition:transform .35s ease; }
-.splash:hover .splash-logo-wrap{ transform:scale(1.05); }
 .splash-word{
   font-family:var(--font-display); font-weight:500; font-size:clamp(2.1rem,6vw,3.4rem);
   color:var(--terracota-dark); margin:28px 0 6px; opacity:0; animation:splashUp .7s ease .55s forwards;
@@ -615,15 +633,22 @@ document.addEventListener('DOMContentLoaded', function () {
 function initSplashWaves() {
   var canvas = document.getElementById('wave-canvas');
   if (!canvas || !canvas.getContext) return;
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { canvas.remove(); return; }
+  var splash = document.querySelector('.splash');
+  var spotlight = document.getElementById('splash-spotlight');
+  var logoWrap = document.querySelector('.splash-logo-wrap');
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduced) { canvas.remove(); if (spotlight) spotlight.remove(); return; }
 
   var ctx = canvas.getContext('2d');
   var host = canvas.parentElement;
   var w = 0, h = 0, dpr = 1;
-  var mouseX = null, mouseY = null;
-  var targetX = null, targetY = null;
   var t = 0;
   var lineCount = 10;
+
+  // smoothed pointer position (always a valid point) + hover intensity (0..1)
+  var px = 0, py = 0, targetPx = 0, targetPy = 0;
+  var intensity = 0, targetIntensity = 0;
+  var logoCenterX = 0, logoCenterY = 0;
 
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -632,54 +657,89 @@ function initSplashWaves() {
     canvas.width = Math.max(1, w * dpr);
     canvas.height = Math.max(1, h * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    px = targetPx = w / 2;
+    py = targetPy = h / 2;
+    if (logoWrap) {
+      var lRect = logoWrap.getBoundingClientRect();
+      var hRect = host.getBoundingClientRect();
+      logoCenterX = lRect.left - hRect.left + lRect.width / 2;
+      logoCenterY = lRect.top - hRect.top + lRect.height / 2;
+    }
   }
   resize();
   window.addEventListener('resize', resize);
 
   function setPointer(clientX, clientY) {
     var rect = canvas.getBoundingClientRect();
-    targetX = clientX - rect.left;
-    targetY = clientY - rect.top;
+    targetPx = clientX - rect.left;
+    targetPy = clientY - rect.top;
+    targetIntensity = 1;
   }
   host.addEventListener('mousemove', function (e) { setPointer(e.clientX, e.clientY); });
-  host.addEventListener('mouseleave', function () { targetX = null; targetY = null; });
+  host.addEventListener('mouseleave', function () { targetIntensity = 0; });
   host.addEventListener('touchmove', function (e) {
     if (e.touches && e.touches[0]) { setPointer(e.touches[0].clientX, e.touches[0].clientY); }
   }, { passive: true });
-  host.addEventListener('touchend', function () { targetX = null; targetY = null; });
+  host.addEventListener('touchend', function () { targetIntensity = 0; });
 
   function draw() {
     t += 0.012;
-    if (targetX === null) {
-      mouseX = null; mouseY = null;
-    } else if (mouseX === null) {
-      mouseX = targetX; mouseY = targetY;
-    } else {
-      mouseX += (targetX - mouseX) * 0.09;
-      mouseY += (targetY - mouseY) * 0.09;
-    }
+    px += (targetPx - px) * 0.08;
+    py += (targetPy - py) * 0.08;
+    intensity += (targetIntensity - intensity) * 0.06;
 
+    // --- animation 1: wave ripple field, gradient-colored ---
     ctx.clearRect(0, 0, w, h);
-    var step = 8;
+    var grad = ctx.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, 'rgba(194,99,47,0.9)');
+    grad.addColorStop(0.5, 'rgba(143,70,32,0.85)');
+    grad.addColorStop(1, 'rgba(111,140,106,0.9)');
+    var step = 6;
     for (var i = 0; i < lineCount; i++) {
       var baseY = (h / (lineCount + 1)) * (i + 1);
       ctx.beginPath();
       for (var x = 0; x <= w; x += step) {
-        var y = baseY + Math.sin(x * 0.012 + t + i * 0.45) * 3.5;
-        if (mouseX !== null) {
-          var dx = x - mouseX, dy = baseY - mouseY;
-          var dist = Math.sqrt(dx * dx + dy * dy);
-          var influence = Math.max(0, 1 - dist / 280);
-          y += Math.sin(dist * 0.045 - t * 3.2) * influence * 30;
-        }
+        var y = baseY + Math.sin(x * 0.012 + t + i * 0.45) * 6;
+        var dx = x - px, dy = baseY - py;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        var influence = Math.max(0, 1 - dist / 340) * intensity;
+        y += Math.sin(dist * 0.045 - t * 3.2) * influence * 52;
         if (x === 0) { ctx.moveTo(x, y); } else { ctx.lineTo(x, y); }
       }
-      ctx.strokeStyle = 'rgba(194,99,47,' + (i % 2 === 0 ? 0.07 : 0.05) + ')';
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = grad;
+      ctx.globalAlpha = 0.16 + (i % 3) * 0.045 + influenceBoost(i);
+      ctx.lineWidth = 1.4;
       ctx.stroke();
     }
+    ctx.globalAlpha = 1;
+
+    // --- animation 2: cursor spotlight glow ---
+    if (spotlight) {
+      spotlight.style.setProperty('--mx', px + 'px');
+      spotlight.style.setProperty('--my', py + 'px');
+      spotlight.style.setProperty('--spot-o', (intensity * 0.9).toFixed(3));
+    }
+
+    // --- animation 3: magnetic logo tilt ---
+    if (logoWrap && splash && !splash.classList.contains('is-leaving')) {
+      var ldx = Math.max(-1, Math.min(1, (px - logoCenterX) / 260));
+      var ldy = Math.max(-1, Math.min(1, (py - logoCenterY) / 260));
+      var tiltX = (-ldy * 14 * intensity).toFixed(2);
+      var tiltY = (ldx * 14 * intensity).toFixed(2);
+      var scale = (1 + 0.05 * intensity).toFixed(3);
+      logoWrap.style.transform = 'perspective(700px) rotateX(' + tiltX + 'deg) rotateY(' + tiltY + 'deg) scale(' + scale + ')';
+    }
+
     requestAnimationFrame(draw);
   }
+
+  function influenceBoost(i) {
+    // subtle extra glow on lines nearest the cursor's row for a livelier feel
+    var baseY = (h / (lineCount + 1)) * (i + 1);
+    var d = Math.abs(baseY - py);
+    return Math.max(0, 1 - d / 220) * intensity * 0.35;
+  }
+
   requestAnimationFrame(draw);
 }
 
